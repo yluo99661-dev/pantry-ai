@@ -1,125 +1,28 @@
- "use client";
-
-import { useMemo, useState } from "react";
-
-type Recipe = {
-  name: string;
-  image?: string;
-  intro: string;
-  time: string;
-  difficulty: string;
-  servings: string;
-  ingredients: { name: string; amount: string }[];
-  steps: string[];
-  tips: string;
-  substitutions: string[];
-};
-
-const cuisineOptions = ["不限", "中餐", "韩餐", "日餐", "西餐", "轻食"];
-const preferenceOptions = ["随心吃", "15分钟内", "简单易做", "预算友好", "高蛋白", "少油"];
-
-export default function Home() {
-  const [ingredients, setIngredients] = useState<string[]>([]);
-  const [entry, setEntry] = useState("");
-  const [cuisine, setCuisine] = useState("不限");
-  const [preference, setPreference] = useState("随心吃");
-  const [servings, setServings] = useState("1–2人");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [selected, setSelected] = useState<Recipe | null>(null);
-  const [saved, setSaved] = useState<string[]>([]);
-  const [history, setHistory] = useState<Recipe[]>([]);
-
-  const add = (text: string) => {
-    const items = text.split(/[、,，\s]+/).map(x => x.trim()).filter(Boolean);
-    setIngredients(prev => Array.from(new Set([...prev, ...items])));
-    setEntry("");
-  };
-  const remove = (name: string) => setIngredients(prev => prev.filter(x => x !== name));
-
-  async function generate() {
-    if (!ingredients.length) { setError("请先添加食材。"); return; }
-    setLoading(true); setError(""); setSelected(null);
-    try {
-      const response = await fetch("/api/recipes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ingredients, cuisine, preference, servings }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "生成失败，请稍后重试。");
-      setIngredients(prev => Array.from(new Set([...prev, ...(data.detectedIngredients || [])])));
-      setRecipes(data.recipes || []);
-      if (!data.recipes?.length) setError("没有匹配菜谱，请尝试其他食材或放宽筛选条件。");
-      setHistory(prev => [...(data.recipes || []), ...prev].slice(0, 12));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "发生未知错误。");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function toggleSave(recipe: Recipe) {
-    setSaved(prev => prev.includes(recipe.name) ? prev.filter(n => n !== recipe.name) : [...prev, recipe.name]);
-  }
-
-  return (
-    <main className="page-shell">
-      <nav className="topbar">
-        <a className="brand" href="#"><span className="brand-icon">✦</span><span>冰箱灵感</span></a>
-        <span className="top-note">你的 AI 厨房搭档</span>
-      </nav>
-
-      <header className="hero">
-        <div className="eyebrow"><span className="spark">✧</span> COOK WITH WHAT YOU HAVE</div>
-        <h1>冰箱里有什么？<br/><em>今天就吃点不一样的。</em></h1>
-        <p>让手边的食材，变成下一顿饭的灵感。</p>
-      </header>
-
-      <section className="composer">
-        <div className="section-title"><span className="num">01</span><div><h2>告诉我你有什么食材</h2><p>输入手边的食材，寻找适合的菜谱。</p></div></div>
-        <div className="ingredient-input">
-          <input value={entry} onChange={e => setEntry(e.target.value)} onKeyDown={e => e.key === "Enter" && add(entry)} placeholder="例如：鸡蛋、番茄、剩米饭…" />
-          <button className="add-btn" onClick={() => add(entry)}>添加 <span>＋</span></button>
-        </div>
-        <div className="chips">
-          {ingredients.map(item => <button key={item} className="ingredient-chip" onClick={() => remove(item)}>{item}<span>×</span></button>)}
-          {!ingredients.length && <span className="empty-chip">食材添加后会显示在这里</span>}
-        </div>
-        <div className="settings-grid">
-          <div className="setting"><div className="setting-title">02 · 今天想吃什么风格？</div><div className="option-list">{cuisineOptions.map(x => <button key={x} className={`option ${cuisine===x?"active":""}`} onClick={() => setCuisine(x)}>{x}</button>)}</div></div>
-          <div className="setting"><div className="setting-title">03 · 料理偏好</div><div className="option-list">{preferenceOptions.map(x => <button key={x} className={`option ${preference===x?"active":""}`} onClick={() => setPreference(x)}>{x}</button>)}</div></div>
-          <div className="setting servings"><div className="setting-title">用餐人数</div><select value={servings} onChange={e => setServings(e.target.value)}><option>1人</option><option>1–2人</option><option>2–3人</option><option>3–4人</option><option>4人以上</option></select></div>
-        </div>
-        <button className="generate" onClick={generate} disabled={loading}>{loading ? <><span className="loader"/>正在为你寻找灵感…</> : <>✦　生成我的专属菜谱　→</>}</button>
-        {error && <div className="error">{error}</div>}
-        <p className="privacy-note">优先使用已配置的 AI；不可用时推荐本地或国际数据库菜谱。</p>
-      </section>
-
-      {recipes.length > 0 && <section className="results">
-        <div className="results-head"><div><div className="eyebrow">YOUR PERSONAL MENU</div><h2>为你找到这些灵感</h2></div><span className="result-count">{recipes.length} 道推荐</span></div>
-        <div className="recipe-grid">
-          {recipes.map((r, i) => <article className="recipe-card" key={r.name+i}>
-            <div className={`recipe-art art-${i%3}`}>{r.image ? <img src={r.image} alt={r.name} style={{width:"100%",height:"100%",objectFit:"cover",position:"absolute",inset:0}}/> : <span>{["🥘","🍜","🥗"][i%3]}</span>}<div className="art-caption">今日灵感 · {String(i+1).padStart(2,"0")}</div></div>
-            <div className="recipe-content"><div className="recipe-meta"><span>◷ {r.time}</span><span>✦ {r.difficulty}</span><span>♧ {r.servings || servings}</span></div><h3>{r.name}</h3><p>{r.intro}</p>
-              <div className="card-actions"><button className="open-recipe" onClick={() => setSelected(r)}>查看做法 <span>→</span></button><button className={`save ${saved.includes(r.name)?"saved":""}`} onClick={() => toggleSave(r)}>{saved.includes(r.name)?"♥":"♡"}</button></div>
-            </div>
-          </article>)}
-        </div>
-      </section>}
-
-      {selected && <div className="modal-backdrop" onClick={() => setSelected(null)}><div className="recipe-modal" onClick={e => e.stopPropagation()}>
-        <button className="close-modal" onClick={() => setSelected(null)}>×</button><div className="modal-hero"><span>🍲</span><small>AI 为你定制</small></div>
-        <h2>{selected.name}</h2><p className="modal-intro">{selected.intro}</p><div className="modal-stats"><span>◷ {selected.time}</span><span>✦ {selected.difficulty}</span><span>♧ {selected.servings || servings}</span></div>
-        <div className="modal-columns"><div><h3>食材准备</h3><ul>{selected.ingredients.map((x,i)=><li key={i}><span>{x.name}</span><b>{x.amount}</b></li>)}</ul></div><div><h3>制作步骤</h3><ol>{selected.steps.map((x,i)=><li key={i}>{x}</li>)}</ol></div></div>
-        {selected.tips && <div className="chef-tip"><b>小贴士</b><p>{selected.tips}</p></div>}
-        {!!selected.substitutions?.length && <div className="chef-tip"><b>食材替换建议</b><p>{selected.substitutions.join("；")}</p></div>}
-        <button className="modal-save" onClick={() => toggleSave(selected)}>{saved.includes(selected.name)?"已收藏 ♥":"收藏这道菜 ♡"}</button>
-      </div></div>}
-
-      {saved.length > 0 && <section className="saved-section"><h3>♡ 已收藏的菜谱</h3><div className="saved-list">{saved.map(name=><span key={name}>{name}</span>)}</div></section>}
-      <footer>冰箱灵感 <span>·</span> 少一点纠结，多一点好好吃饭</footer>
-    </main>
-  );
+"use client";
+import {useState,useEffect} from 'react';
+import {recipes, Recipe} from './recipes';
+const cuisines=['不限','中餐','韩餐','日餐','西餐','轻食'];
+const prefs=['随心吃','15分钟内','简单易做','预算友好','高蛋白','少油'];
+const days=['周一','周二','周三','周四','周五','周六','周日'];
+export default function Home(){
+ const [items,S]=useState<string[]>([]),[entry,E]=useState(''),[c,C]=useState('不限'),[p,P]=useState('随心吃'),[n,N]=useState(2),[tab,T]=useState('智能食谱'),[results,R]=useState<Recipe[]>([]),[searched,Q]=useState(false),[saved,F]=useState<string[]>([]),[plan,M]=useState<string[]>([]),[selected,D]=useState<Recipe|null>(null),[step,B]=useState(0),[seconds,K]=useState(0),[running,U]=useState(false),[ready,H]=useState(false),[checked,J]=useState<string[]>([]);
+ useEffect(()=>{try{const a=JSON.parse(localStorage.getItem('pantry-v2')||'{}');S(a.items||[]);F(a.saved||[]);M(a.plan||[]);}catch{}H(true)},[]);
+ useEffect(()=>{if(ready)localStorage.setItem('pantry-v2',JSON.stringify({items,saved,plan}))},[items,saved,plan,ready]);
+ useEffect(()=>{if(!running||seconds<=0)return;const t=setTimeout(()=>K(seconds-1),1000);return()=>clearTimeout(t)},[running,seconds]);
+ const add=(s:string)=>{S(old=>Array.from(new Set([...old,...s.split(/[、,，\s]+/).map(x=>x.trim()).filter(Boolean)])));E('')};
+ const has=(s:string)=>items.includes(s)|| (s==='番茄'&&items.includes('西红柿'))||(s==='土豆'&&items.includes('马铃薯'));
+ const match=(r:Recipe)=>r.food.filter(x=>has(x[0])).length/r.food.length;
+ const rank=()=>recipes.filter(r=>(c==='不限'||r.cuisine===c)&&(p==='随心吃'||p==='15分钟内'&&r.time<=15||r.tags.includes(p))).sort((a,b)=>match(b)-match(a)||a.time-b.time);
+ const open=(r:Recipe)=>{D(r);B(0);K(0);U(false)};
+ const toggle=(r:Recipe)=>F(old=>old.includes(r.name)?old.filter(x=>x!==r.name):[...old,r.name]);
+ const list=tab==='收藏'?recipes.filter(r=>saved.includes(r.name)):results;
+ const shopping=Object.entries(plan.reduce<Record<string,number>>((acc,id)=>{recipes.find(r=>r.name===id)?.food.forEach(([name,g])=>{if(!has(name))acc[name]=(acc[name]||0)+g*n/2});return acc},{}));
+ return <main className="shell"><nav><strong>✦ 冰箱灵感 <small>2.0</small></strong><span>智能厨房 · 本地食谱匹配</span></nav><header><small>COOK WITH WHAT YOU HAVE</small><h1>冰箱里有什么？<br/><em>今天就吃点不一样的。</em></h1><p>用手边的食材，发现下一顿饭的灵感。</p></header><div className="tabs">{['智能食谱','我的冰箱','一周菜单','购物清单','收藏'].map(t=><button className={tab===t?'active':''} onClick={()=>T(t)} key={t}>{t}</button>)}</div>
+ {(tab==='智能食谱'||tab==='我的冰箱')&&<section><h2>01 / 我的食材</h2><form onSubmit={e=>{e.preventDefault();add(entry)}}><input value={entry} onChange={e=>E(e.target.value)} placeholder="输入食材，例如：鸡蛋、番茄"/><button className="primary">添加</button></form><div className="chips">{items.map(x=><button key={x} onClick={()=>S(old=>old.filter(y=>y!==x))}>{x} ×</button>)}</div><small>快捷添加</small><div className="chips">{['鸡蛋','番茄','土豆','鸡肉','豆腐','洋葱','米饭','黄瓜','蘑菇','牛肉','菠菜','面条'].map(x=><button key={x} onClick={()=>add(x)}>{x} +</button>)}</div></section>}
+ {tab==='智能食谱'&&<section><h2>02 / 定制你的菜谱</h2><p>料理风格</p><div className="chips">{cuisines.map(x=><button className={c===x?'active':''} onClick={()=>C(x)} key={x}>{x}</button>)}</div><p>料理偏好</p><div className="chips">{prefs.map(x=><button className={p===x?'active':''} onClick={()=>P(x)} key={x}>{x}</button>)}</div><p>用餐人数 <select value={n} onChange={e=>N(+e.target.value)}>{[1,2,3,4,5,6].map(x=><option key={x} value={x}>{x}人</option>)}</select></p><button className="primary wide" onClick={()=>{R(rank().slice(0,6));Q(true)}}>✦ 匹配我的专属菜谱</button><small>规则匹配模式 · 无需 AI 接口 · 不进行图片识别</small></section>}
+ {(tab==='智能食谱'||tab==='收藏')&&<><h2>{tab==='收藏'?'我的收藏':'推荐菜谱'}</h2>{!list.length&&<p>{tab==='收藏'?'暂无收藏':searched?'没有符合筛选条件的菜谱，请调整偏好。':'选择食材和偏好后开始匹配。'}</p>}<div className="cards">{list.map(r=><article key={r.name}><div className="art">{r.icon}<small>{r.cuisine}</small></div><h3>{r.name}</h3><p>{r.time} 分钟 · {r.tags.includes('简单易做')?'简单':'普通'} · {n}人</p><p>食材匹配 {Math.round(match(r)*100)}%</p><div className="bar"><i style={{width:`${match(r)*100}%`}}/></div><p>缺少：{r.food.filter(x=>!has(x[0])).map(x=>x[0]).join('、')||'无'}</p><div className="actions"><button onClick={()=>open(r)}>查看做法</button><button onClick={()=>toggle(r)}>{saved.includes(r.name)?'♥ 已收藏':'♡ 收藏'}</button></div></article>)}</div></>}
+ {tab==='一周菜单'&&<section><h2>一周菜单 · 每日一道主菜</h2><button className="primary" onClick={()=>{const a=rank();M(a.length?days.map((_,i)=>a[i%a.length].name):[]);J([])}}>自动安排菜单</button>{days.map((d,i)=><p className="day" key={d}><b>{d}</b><select value={plan[i]||''} onChange={e=>M(old=>days.map((_,j)=>j===i?e.target.value:old[j]||''))}><option value="">未安排</option>{recipes.map(r=><option key={r.name}>{r.name}</option>)}</select></p>)}</section>}
+ {tab==='购物清单'&&<section><h2>待采购食材 · {n}人</h2><p>根据一周菜单合并用量，已拥有的食材暂不列入，请核对库存数量。</p>{shopping.length?shopping.map(([x,g])=><p key={x}><label><input type="checkbox" checked={checked.includes(x)} onChange={()=>J(old=>old.includes(x)?old.filter(y=>y!==x):[...old,x])}/> {x} · {g} 克</label></p>):<p>暂无待采购食材，请先安排菜单。</p>}</section>}
+ {selected&&<div className="overlay" onClick={()=>D(null)}><section className="modal" onClick={e=>e.stopPropagation()}><button onClick={()=>D(null)}>关闭 ×</button><h2>{selected.name}</h2><p>{n}人份 · {selected.time}分钟</p>{selected.food.map(([x,g])=><p key={x}>{x}：{g*n/2} 克 {has(x)?'✓':'（待准备）'}</p>)}<p>调味料：{selected.season}</p><p>替代建议：{selected.sub}</p><h3>烹饪步骤 {step+1}/{selected.steps.length}</h3><p>{selected.steps[step]}</p><div className="actions"><button disabled={step===0} onClick={()=>B(step-1)}>上一步</button><button disabled={step===selected.steps.length-1} onClick={()=>B(step+1)}>下一步</button></div><h3>厨房计时器 {Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')}</h3><div className="actions">{[1,3,5,10].map(x=><button key={x} onClick={()=>{K(x*60);U(true)}}>{x}分钟</button>)}<button onClick={()=>U(!running)}>{running?'暂停':'继续'}</button></div><small>计时仅作提醒，请确认食材充分熟透。</small></section></div>}
+ <footer>冰箱灵感 2.0 · 食谱匹配系统 · 数据保存在当前浏览器</footer></main>
 }
