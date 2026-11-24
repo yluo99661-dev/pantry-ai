@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 type Recipe = {
   name: string;
+  image?: string;
   intro: string;
   time: string;
   difficulty: string;
@@ -23,8 +24,6 @@ export default function Home() {
   const [cuisine, setCuisine] = useState("不限");
   const [preference, setPreference] = useState("随心吃");
   const [servings, setServings] = useState("1–2人");
-  const [image, setImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -39,37 +38,20 @@ export default function Home() {
   };
   const remove = (name: string) => setIngredients(prev => prev.filter(x => x !== name));
 
-  const upload = (file?: File) => {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) { setError("请选择图片文件。"); return; }
-    if (file.size > 8 * 1024 * 1024) { setError("图片大小请控制在 8MB 以内。"); return; }
-    setImage(file);
-    setImagePreview(URL.createObjectURL(file));
-    setError("");
-  };
-
   async function generate() {
-    if (!ingredients.length && !image) { setError("先添加食材，或上传冰箱照片吧。"); return; }
+    if (!ingredients.length) { setError("请先添加食材。"); return; }
     setLoading(true); setError(""); setSelected(null);
     try {
-      let imageData: string | undefined;
-      if (image) {
-        imageData = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result));
-          reader.onerror = reject;
-          reader.readAsDataURL(image);
-        });
-      }
       const response = await fetch("/api/recipes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ingredients, cuisine, preference, servings, imageData }),
+        body: JSON.stringify({ ingredients, cuisine, preference, servings }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "生成失败，请稍后重试。");
       setIngredients(prev => Array.from(new Set([...prev, ...(data.detectedIngredients || [])])));
       setRecipes(data.recipes || []);
+      if (!data.recipes?.length) setError("没有匹配菜谱，请尝试其他食材或放宽筛选条件。");
       setHistory(prev => [...(data.recipes || []), ...prev].slice(0, 12));
     } catch (e) {
       setError(e instanceof Error ? e.message : "发生未知错误。");
@@ -96,7 +78,7 @@ export default function Home() {
       </header>
 
       <section className="composer">
-        <div className="section-title"><span className="num">01</span><div><h2>告诉我你有什么食材</h2><p>想到什么就加什么，也可以拍照让 AI 帮你识别。</p></div></div>
+        <div className="section-title"><span className="num">01</span><div><h2>告诉我你有什么食材</h2><p>输入手边的食材，寻找适合的菜谱。</p></div></div>
         <div className="ingredient-input">
           <input value={entry} onChange={e => setEntry(e.target.value)} onKeyDown={e => e.key === "Enter" && add(entry)} placeholder="例如：鸡蛋、番茄、剩米饭…" />
           <button className="add-btn" onClick={() => add(entry)}>添加 <span>＋</span></button>
@@ -105,12 +87,6 @@ export default function Home() {
           {ingredients.map(item => <button key={item} className="ingredient-chip" onClick={() => remove(item)}>{item}<span>×</span></button>)}
           {!ingredients.length && <span className="empty-chip">食材添加后会显示在这里</span>}
         </div>
-        <label className="upload-box">
-          <input type="file" accept="image/*" capture="environment" onChange={e => upload(e.target.files?.[0])}/>
-          <span className="upload-icon">▧</span><span><b>{image ? "更换照片" : "上传冰箱 / 食材照片"}</b><small>AI 视觉识别 · 图片最大 8MB</small></span>
-        </label>
-        {imagePreview && <div className="preview"><img src={imagePreview} alt="上传预览"/><button onClick={() => {setImage(null);setImagePreview("");}}>移除照片 ×</button></div>}
-
         <div className="settings-grid">
           <div className="setting"><div className="setting-title">02 · 今天想吃什么风格？</div><div className="option-list">{cuisineOptions.map(x => <button key={x} className={`option ${cuisine===x?"active":""}`} onClick={() => setCuisine(x)}>{x}</button>)}</div></div>
           <div className="setting"><div className="setting-title">03 · 料理偏好</div><div className="option-list">{preferenceOptions.map(x => <button key={x} className={`option ${preference===x?"active":""}`} onClick={() => setPreference(x)}>{x}</button>)}</div></div>
@@ -118,14 +94,14 @@ export default function Home() {
         </div>
         <button className="generate" onClick={generate} disabled={loading}>{loading ? <><span className="loader"/>正在为你寻找灵感…</> : <>✦　生成我的专属菜谱　→</>}</button>
         {error && <div className="error">{error}</div>}
-        <p className="privacy-note">照片仅用于本次食材识别和菜谱生成，不会在本网站保存。</p>
+        <p className="privacy-note">优先使用已配置的 AI；不可用时推荐本地或国际数据库菜谱。</p>
       </section>
 
       {recipes.length > 0 && <section className="results">
         <div className="results-head"><div><div className="eyebrow">YOUR PERSONAL MENU</div><h2>为你找到这些灵感</h2></div><span className="result-count">{recipes.length} 道推荐</span></div>
         <div className="recipe-grid">
           {recipes.map((r, i) => <article className="recipe-card" key={r.name+i}>
-            <div className={`recipe-art art-${i%3}`}><span>{["🥘","🍜","🥗"][i%3]}</span><div className="art-caption">今日灵感 · {String(i+1).padStart(2,"0")}</div></div>
+            <div className={`recipe-art art-${i%3}`}>{r.image ? <img src={r.image} alt={r.name} style={{width:"100%",height:"100%",objectFit:"cover",position:"absolute",inset:0}}/> : <span>{["🥘","🍜","🥗"][i%3]}</span>}<div className="art-caption">今日灵感 · {String(i+1).padStart(2,"0")}</div></div>
             <div className="recipe-content"><div className="recipe-meta"><span>◷ {r.time}</span><span>✦ {r.difficulty}</span><span>♧ {r.servings || servings}</span></div><h3>{r.name}</h3><p>{r.intro}</p>
               <div className="card-actions"><button className="open-recipe" onClick={() => setSelected(r)}>查看做法 <span>→</span></button><button className={`save ${saved.includes(r.name)?"saved":""}`} onClick={() => toggleSave(r)}>{saved.includes(r.name)?"♥":"♡"}</button></div>
             </div>
