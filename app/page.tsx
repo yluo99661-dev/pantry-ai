@@ -1,5 +1,5 @@
 "use client";
-import {useState,useEffect,useRef} from 'react';
+import {useState,useEffect} from 'react';
 import {recipes, Recipe} from './recipes';
 const cuisines=['不限','中餐','韩餐','日餐','西餐','轻食'];
 const prefs=['随心吃','15分钟内','简单易做','预算友好','高蛋白','少油'];
@@ -9,19 +9,6 @@ export default function Home(){
  useEffect(()=>{try{const a=JSON.parse(localStorage.getItem('pantry-v2')||'{}');S(a.items||[]);F(a.saved||[]);M(a.plan||[]);}catch{}H(true)},[]);
  useEffect(()=>{if(ready)localStorage.setItem('pantry-v2',JSON.stringify({items,saved,plan}))},[items,saved,plan,ready]);
  useEffect(()=>{if(!running||seconds<=0)return;const t=setTimeout(()=>K(seconds-1),1000);return()=>clearTimeout(t)},[running,seconds]);
- const engine=useRef<import('@mlc-ai/web-llm').MLCEngineInterface|null>(null);
- const [busy,setBusy]=useState(false),[status,setStatus]=useState('尚未加载模型'),[answer,setAnswer]=useState('');
- async function generate(){
- if(busy)return; setBusy(true);setAnswer('');
- try {
- if(!items.length)throw new Error('请先添加食材');
- if(!('gpu' in navigator))throw new Error('当前浏览器不支持 WebGPU');
- if(!engine.current){const lib=await import('@mlc-ai/web-llm');const model=lib.prebuiltAppConfig.model_list.find(m=>m.model_id==='Qwen2.5-0.5B-Instruct-q4f16_1-MLC')||lib.prebuiltAppConfig.model_list.find(m=>m.model_id.startsWith('Qwen2.5-0.5B-Instruct')); if(!model)throw new Error('未找到兼容模型');engine.current=await lib.CreateMLCEngine(model.model_id,{initProgressCallback:r=>setStatus('加载模型 '+Math.round(r.progress*100)+'%')});}
- setStatus('AI 正在生成菜谱…');
- const stream=await engine.current.chat.completions.create({messages:[{role:'system',content:'你是中文家庭食谱助手。只回答安全的普通家庭烹饪问题。给出一道菜、用量、缺少食材和替代建议、清晰步骤。提醒充分加热。不要推荐危险食材或危险做法。'},{role:'user',content:`食材：${items.join('、')}；菜系：${c}；偏好：${p}；人数：${n}。请生成一道中文菜谱。`}],stream:true,max_tokens:650,temperature:0.5});
- let output='';for await(const chunk of stream){output+=chunk.choices[0]?.delta?.content||'';setAnswer(output);}if(!output.trim())throw new Error('模型未返回内容');setStatus('本地 AI 已生成 · 请核对食谱');
- }catch(e){setAnswer('');setStatus('AI 暂不可用：'+(e instanceof Error?e.message:'加载失败')+'。已切换本地推荐。');R(rank().slice(0,6));Q(true);}finally{setBusy(false);}
- }
  const add=(s:string)=>{S(old=>Array.from(new Set([...old,...s.split(/[、,，\s]+/).map(x=>x.trim()).filter(Boolean)])));E('')};
  const has=(s:string)=>items.includes(s)|| (s==='番茄'&&items.includes('西红柿'))||(s==='土豆'&&items.includes('马铃薯'));
  const match=(r:Recipe)=>r.food.filter(x=>has(x[0])).length/r.food.length;
@@ -30,12 +17,12 @@ export default function Home(){
  const toggle=(r:Recipe)=>F(old=>old.includes(r.name)?old.filter(x=>x!==r.name):[...old,r.name]);
  const list=tab==='收藏'?recipes.filter(r=>saved.includes(r.name)):results;
  const shopping=Object.entries(plan.reduce<Record<string,number>>((acc,id)=>{recipes.find(r=>r.name===id)?.food.forEach(([name,g])=>{if(!has(name))acc[name]=(acc[name]||0)+g*n/2});return acc},{}));
- return <main className="shell"><nav><strong>✦ 冰箱灵感</strong><span>AI 食谱助手</span></nav><header><small>COOK WITH WHAT YOU HAVE</small><h1>冰箱里有什么？<br/><em>今天就吃点不一样的。</em></h1><p>用手边的食材，发现下一顿饭的灵感。</p></header><div className="tabs">{['智能食谱','我的冰箱','一周菜单','购物清单','收藏'].map(t=><button className={tab===t?'active':''} onClick={()=>T(t)} key={t}>{t}</button>)}</div>
+ return <main className="shell"><nav><strong>✦ 冰箱灵感 <small>2.0</small></strong><span>智能厨房 · 本地食谱匹配</span></nav><header><small>COOK WITH WHAT YOU HAVE</small><h1>冰箱里有什么？<br/><em>今天就吃点不一样的。</em></h1><p>用手边的食材，发现下一顿饭的灵感。</p></header><div className="tabs">{['智能食谱','我的冰箱','一周菜单','购物清单','收藏'].map(t=><button className={tab===t?'active':''} onClick={()=>T(t)} key={t}>{t}</button>)}</div>
  {(tab==='智能食谱'||tab==='我的冰箱')&&<section><h2>01 / 我的食材</h2><form onSubmit={e=>{e.preventDefault();add(entry)}}><input value={entry} onChange={e=>E(e.target.value)} placeholder="输入食材，例如：鸡蛋、番茄"/><button className="primary">添加</button></form><div className="chips">{items.map(x=><button key={x} onClick={()=>S(old=>old.filter(y=>y!==x))}>{x} ×</button>)}</div><small>快捷添加</small><div className="chips">{['鸡蛋','番茄','土豆','鸡肉','豆腐','洋葱','米饭','黄瓜','蘑菇','牛肉','菠菜','面条'].map(x=><button key={x} onClick={()=>add(x)}>{x} +</button>)}</div></section>}
- {tab==='智能食谱'&&<section><h2>02 / 定制你的菜谱</h2><p>料理风格</p><div className="chips">{cuisines.map(x=><button className={c===x?'active':''} onClick={()=>C(x)} key={x}>{x}</button>)}</div><p>料理偏好</p><div className="chips">{prefs.map(x=><button className={p===x?'active':''} onClick={()=>P(x)} key={x}>{x}</button>)}</div><p>用餐人数 <select value={n} onChange={e=>N(+e.target.value)}>{[1,2,3,4,5,6].map(x=><option key={x} value={x}>{x}人</option>)}</select></p><button className="primary wide" onClick={()=>{R(rank().slice(0,6));Q(true)}}>✦ 匹配我的专属菜谱</button><div className="ai-panel"><h3>✦ 浏览器 AI 厨师</h3><p>首次使用需下载模型（数百 MB 或更多），需要支持 WebGPU 的电脑。模型在本机运行，无需密钥。</p><button className="primary wide" disabled={busy||!items.length} onClick={generate}>{busy?'AI 处理中…':'启动 AI 并生成菜谱'}</button><p role="status">{status}</p>{answer&&<div className="ai-answer">{answer}</div>}</div></section>}
+ {tab==='智能食谱'&&<section><h2>02 / 定制你的菜谱</h2><p>料理风格</p><div className="chips">{cuisines.map(x=><button className={c===x?'active':''} onClick={()=>C(x)} key={x}>{x}</button>)}</div><p>料理偏好</p><div className="chips">{prefs.map(x=><button className={p===x?'active':''} onClick={()=>P(x)} key={x}>{x}</button>)}</div><p>用餐人数 <select value={n} onChange={e=>N(+e.target.value)}>{[1,2,3,4,5,6].map(x=><option key={x} value={x}>{x}人</option>)}</select></p><button className="primary wide" onClick={()=>{R(rank().slice(0,6));Q(true)}}>✦ 匹配我的专属菜谱</button><small>规则匹配模式 · 无需 AI 接口 · 不进行图片识别</small></section>}
  {(tab==='智能食谱'||tab==='收藏')&&<><h2>{tab==='收藏'?'我的收藏':'推荐菜谱'}</h2>{!list.length&&<p>{tab==='收藏'?'暂无收藏':searched?'没有符合筛选条件的菜谱，请调整偏好。':'选择食材和偏好后开始匹配。'}</p>}<div className="cards">{list.map(r=><article key={r.name}><div className="art">{r.icon}<small>{r.cuisine}</small></div><h3>{r.name}</h3><p>{r.time} 分钟 · {r.tags.includes('简单易做')?'简单':'普通'} · {n}人</p><p>食材匹配 {Math.round(match(r)*100)}%</p><div className="bar"><i style={{width:`${match(r)*100}%`}}/></div><p>缺少：{r.food.filter(x=>!has(x[0])).map(x=>x[0]).join('、')||'无'}</p><div className="actions"><button onClick={()=>open(r)}>查看做法</button><button onClick={()=>toggle(r)}>{saved.includes(r.name)?'♥ 已收藏':'♡ 收藏'}</button></div></article>)}</div></>}
  {tab==='一周菜单'&&<section><h2>一周菜单 · 每日一道主菜</h2><button className="primary" onClick={()=>{const a=rank();M(a.length?days.map((_,i)=>a[i%a.length].name):[]);J([])}}>自动安排菜单</button>{days.map((d,i)=><p className="day" key={d}><b>{d}</b><select value={plan[i]||''} onChange={e=>M(old=>days.map((_,j)=>j===i?e.target.value:old[j]||''))}><option value="">未安排</option>{recipes.map(r=><option key={r.name}>{r.name}</option>)}</select></p>)}</section>}
  {tab==='购物清单'&&<section><h2>待采购食材 · {n}人</h2><p>根据一周菜单合并用量，已拥有的食材暂不列入，请核对库存数量。</p>{shopping.length?shopping.map(([x,g])=><p key={x}><label><input type="checkbox" checked={checked.includes(x)} onChange={()=>J(old=>old.includes(x)?old.filter(y=>y!==x):[...old,x])}/> {x} · {g} 克</label></p>):<p>暂无待采购食材，请先安排菜单。</p>}</section>}
  {selected&&<div className="overlay" onClick={()=>D(null)}><section className="modal" onClick={e=>e.stopPropagation()}><button onClick={()=>D(null)}>关闭 ×</button><h2>{selected.name}</h2><p>{n}人份 · {selected.time}分钟</p>{selected.food.map(([x,g])=><p key={x}>{x}：{g*n/2} 克 {has(x)?'✓':'（待准备）'}</p>)}<p>调味料：{selected.season}</p><p>替代建议：{selected.sub}</p><h3>烹饪步骤 {step+1}/{selected.steps.length}</h3><p>{selected.steps[step]}</p><div className="actions"><button disabled={step===0} onClick={()=>B(step-1)}>上一步</button><button disabled={step===selected.steps.length-1} onClick={()=>B(step+1)}>下一步</button></div><h3>厨房计时器 {Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')}</h3><div className="actions">{[1,3,5,10].map(x=><button key={x} onClick={()=>{K(x*60);U(true)}}>{x}分钟</button>)}<button onClick={()=>U(!running)}>{running?'暂停':'继续'}</button></div><small>计时仅作提醒，请确认食材充分熟透。</small></section></div>}
- <footer>冰箱灵感 · AI 食谱助手 · 数据保存在当前浏览器</footer></main>
+ <footer>冰箱灵感 2.0 · 食谱匹配系统 · 数据保存在当前浏览器</footer></main>
 }
